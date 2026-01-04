@@ -1,0 +1,224 @@
+package vai
+
+import (
+	"context"
+
+	"github.com/vango-go/vai/pkg/core"
+	"github.com/vango-go/vai/pkg/core/providers/anthropic"
+	"github.com/vango-go/vai/pkg/core/providers/cerebras"
+	"github.com/vango-go/vai/pkg/core/providers/groq"
+	"github.com/vango-go/vai/pkg/core/providers/openai"
+	"github.com/vango-go/vai/pkg/core/types"
+)
+
+// anthropicAdapter wraps the anthropic.Provider to implement core.Provider.
+type anthropicAdapter struct {
+	provider *anthropic.Provider
+}
+
+func newAnthropicAdapter(p *anthropic.Provider) *anthropicAdapter {
+	return &anthropicAdapter{provider: p}
+}
+
+func (a *anthropicAdapter) Name() string {
+	return a.provider.Name()
+}
+
+func (a *anthropicAdapter) CreateMessage(ctx context.Context, req *types.MessageRequest) (*types.MessageResponse, error) {
+	return a.provider.CreateMessage(ctx, req)
+}
+
+func (a *anthropicAdapter) StreamMessage(ctx context.Context, req *types.MessageRequest) (core.EventStream, error) {
+	stream, err := a.provider.StreamMessage(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return &eventStreamAdapter{stream: stream}, nil
+}
+
+func (a *anthropicAdapter) Capabilities() core.ProviderCapabilities {
+	caps := a.provider.Capabilities()
+	return core.ProviderCapabilities{
+		Vision:           caps.Vision,
+		AudioInput:       caps.AudioInput,
+		AudioOutput:      caps.AudioOutput,
+		Video:            caps.Video,
+		Tools:            caps.Tools,
+		ToolStreaming:    caps.ToolStreaming,
+		Thinking:         caps.Thinking,
+		StructuredOutput: caps.StructuredOutput,
+		NativeTools:      caps.NativeTools,
+	}
+}
+
+// openaiAdapter wraps the openai.Provider to implement core.Provider.
+type openaiAdapter struct {
+	provider *openai.Provider
+}
+
+func newOpenAIAdapter(p *openai.Provider) *openaiAdapter {
+	return &openaiAdapter{provider: p}
+}
+
+func (a *openaiAdapter) Name() string {
+	return a.provider.Name()
+}
+
+func (a *openaiAdapter) CreateMessage(ctx context.Context, req *types.MessageRequest) (*types.MessageResponse, error) {
+	return a.provider.CreateMessage(ctx, req)
+}
+
+func (a *openaiAdapter) StreamMessage(ctx context.Context, req *types.MessageRequest) (core.EventStream, error) {
+	stream, err := a.provider.StreamMessage(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return &openaiEventStreamAdapter{stream: stream}, nil
+}
+
+func (a *openaiAdapter) Capabilities() core.ProviderCapabilities {
+	caps := a.provider.Capabilities()
+	return core.ProviderCapabilities{
+		Vision:           caps.Vision,
+		AudioInput:       caps.AudioInput,
+		AudioOutput:      caps.AudioOutput,
+		Video:            caps.Video,
+		Tools:            caps.Tools,
+		ToolStreaming:    caps.ToolStreaming,
+		Thinking:         caps.Thinking,
+		StructuredOutput: caps.StructuredOutput,
+		NativeTools:      caps.NativeTools,
+	}
+}
+
+// groqAdapter wraps the groq.Provider to implement core.Provider.
+type groqAdapter struct {
+	provider *groq.Provider
+}
+
+func newGroqAdapter(p *groq.Provider) *groqAdapter {
+	return &groqAdapter{provider: p}
+}
+
+func (a *groqAdapter) Name() string {
+	return a.provider.Name()
+}
+
+func (a *groqAdapter) CreateMessage(ctx context.Context, req *types.MessageRequest) (*types.MessageResponse, error) {
+	return a.provider.CreateMessage(ctx, req)
+}
+
+func (a *groqAdapter) StreamMessage(ctx context.Context, req *types.MessageRequest) (core.EventStream, error) {
+	stream, err := a.provider.StreamMessage(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return &groqEventStreamAdapter{stream: stream}, nil
+}
+
+func (a *groqAdapter) Capabilities() core.ProviderCapabilities {
+	caps := a.provider.Capabilities()
+	return core.ProviderCapabilities{
+		Vision:           caps.Vision,
+		AudioInput:       caps.AudioInput,
+		AudioOutput:      caps.AudioOutput,
+		Video:            caps.Video,
+		Tools:            caps.Tools,
+		ToolStreaming:    caps.ToolStreaming,
+		Thinking:         caps.Thinking,
+		StructuredOutput: caps.StructuredOutput,
+		NativeTools:      caps.NativeTools,
+	}
+}
+
+// cerebrasAdapter wraps the cerebras.Provider to implement core.Provider.
+type cerebrasAdapter struct {
+	provider *cerebras.Provider
+}
+
+func newCerebrasAdapter(p *cerebras.Provider) *cerebrasAdapter {
+	return &cerebrasAdapter{provider: p}
+}
+
+func (a *cerebrasAdapter) Name() string {
+	return a.provider.Name()
+}
+
+func (a *cerebrasAdapter) CreateMessage(ctx context.Context, req *types.MessageRequest) (*types.MessageResponse, error) {
+	return a.provider.CreateMessage(ctx, req)
+}
+
+func (a *cerebrasAdapter) StreamMessage(ctx context.Context, req *types.MessageRequest) (core.EventStream, error) {
+	stream, err := a.provider.StreamMessage(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return &cerebrasEventStreamAdapter{stream: stream}, nil
+}
+
+func (a *cerebrasAdapter) Capabilities() core.ProviderCapabilities {
+	caps := a.provider.Capabilities()
+	return core.ProviderCapabilities{
+		Vision:           caps.Vision,
+		AudioInput:       caps.AudioInput,
+		AudioOutput:      caps.AudioOutput,
+		Video:            caps.Video,
+		Tools:            caps.Tools,
+		ToolStreaming:    caps.ToolStreaming,
+		Thinking:         caps.Thinking,
+		StructuredOutput: caps.StructuredOutput,
+		NativeTools:      caps.NativeTools,
+	}
+}
+
+// eventStreamAdapter wraps anthropic.EventStream to implement core.EventStream.
+type eventStreamAdapter struct {
+	stream anthropic.EventStream
+}
+
+func (a *eventStreamAdapter) Next() (types.StreamEvent, error) {
+	return a.stream.Next()
+}
+
+func (a *eventStreamAdapter) Close() error {
+	return a.stream.Close()
+}
+
+// openaiEventStreamAdapter wraps openai.EventStream to implement core.EventStream.
+type openaiEventStreamAdapter struct {
+	stream openai.EventStream
+}
+
+func (a *openaiEventStreamAdapter) Next() (types.StreamEvent, error) {
+	return a.stream.Next()
+}
+
+func (a *openaiEventStreamAdapter) Close() error {
+	return a.stream.Close()
+}
+
+// groqEventStreamAdapter wraps groq.EventStream to implement core.EventStream.
+type groqEventStreamAdapter struct {
+	stream groq.EventStream
+}
+
+func (a *groqEventStreamAdapter) Next() (types.StreamEvent, error) {
+	return a.stream.Next()
+}
+
+func (a *groqEventStreamAdapter) Close() error {
+	return a.stream.Close()
+}
+
+// cerebrasEventStreamAdapter wraps cerebras.EventStream to implement core.EventStream.
+type cerebrasEventStreamAdapter struct {
+	stream cerebras.EventStream
+}
+
+func (a *cerebrasEventStreamAdapter) Next() (types.StreamEvent, error) {
+	return a.stream.Next()
+}
+
+func (a *cerebrasEventStreamAdapter) Close() error {
+	return a.stream.Close()
+}
