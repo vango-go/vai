@@ -2130,10 +2130,19 @@ The schema can be used to:
 - `openai/gpt-4o-realtime` (for Live endpoint)
 
 ### Google Gemini
-- `gemini/gemini-2.0-flash`
-- `gemini/gemini-2.0-pro`
-- `gemini/gemini-1.5-pro`
-- `gemini/gemini-1.5-flash`
+
+**Gemini 3 Series (Preview):**
+- `gemini/gemini-3-pro-preview` - Most intelligent model with state-of-the-art reasoning
+- `gemini/gemini-3-flash-preview` - Speed-optimized with improved reasoning
+- `gemini/gemini-3-pro-image-preview` - Image generation with thinking and grounding
+
+**Gemini 2.5 Series:**
+- `gemini/gemini-2.5-pro` - Powerful model for complex tasks
+- `gemini/gemini-2.5-flash` - Balanced model with 1M token context window
+- `gemini/gemini-2.5-flash-lite` - Fast and cost-efficient
+
+**Gemini 2.0 Series:**
+- `gemini/gemini-2.0-flash` - Latest stable Flash model
 
 ### Groq
 - `groq/llama-3.3-70b`

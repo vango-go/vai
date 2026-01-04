@@ -7,6 +7,7 @@ import (
 	"github.com/vango-go/vai/pkg/core/providers/anthropic"
 	"github.com/vango-go/vai/pkg/core/providers/cerebras"
 	"github.com/vango-go/vai/pkg/core/providers/groq"
+	"github.com/vango-go/vai/pkg/core/providers/oai_resp"
 	"github.com/vango-go/vai/pkg/core/providers/openai"
 	"github.com/vango-go/vai/pkg/core/types"
 )
@@ -77,6 +78,46 @@ func (a *openaiAdapter) StreamMessage(ctx context.Context, req *types.MessageReq
 }
 
 func (a *openaiAdapter) Capabilities() core.ProviderCapabilities {
+	caps := a.provider.Capabilities()
+	return core.ProviderCapabilities{
+		Vision:           caps.Vision,
+		AudioInput:       caps.AudioInput,
+		AudioOutput:      caps.AudioOutput,
+		Video:            caps.Video,
+		Tools:            caps.Tools,
+		ToolStreaming:    caps.ToolStreaming,
+		Thinking:         caps.Thinking,
+		StructuredOutput: caps.StructuredOutput,
+		NativeTools:      caps.NativeTools,
+	}
+}
+
+// oaiRespAdapter wraps the oai_resp.Provider to implement core.Provider.
+type oaiRespAdapter struct {
+	provider *oai_resp.Provider
+}
+
+func newOaiRespAdapter(p *oai_resp.Provider) *oaiRespAdapter {
+	return &oaiRespAdapter{provider: p}
+}
+
+func (a *oaiRespAdapter) Name() string {
+	return a.provider.Name()
+}
+
+func (a *oaiRespAdapter) CreateMessage(ctx context.Context, req *types.MessageRequest) (*types.MessageResponse, error) {
+	return a.provider.CreateMessage(ctx, req)
+}
+
+func (a *oaiRespAdapter) StreamMessage(ctx context.Context, req *types.MessageRequest) (core.EventStream, error) {
+	stream, err := a.provider.StreamMessage(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return &oaiRespEventStreamAdapter{stream: stream}, nil
+}
+
+func (a *oaiRespAdapter) Capabilities() core.ProviderCapabilities {
 	caps := a.provider.Capabilities()
 	return core.ProviderCapabilities{
 		Vision:           caps.Vision,
@@ -220,5 +261,18 @@ func (a *cerebrasEventStreamAdapter) Next() (types.StreamEvent, error) {
 }
 
 func (a *cerebrasEventStreamAdapter) Close() error {
+	return a.stream.Close()
+}
+
+// oaiRespEventStreamAdapter wraps oai_resp.EventStream to implement core.EventStream.
+type oaiRespEventStreamAdapter struct {
+	stream oai_resp.EventStream
+}
+
+func (a *oaiRespEventStreamAdapter) Next() (types.StreamEvent, error) {
+	return a.stream.Next()
+}
+
+func (a *oaiRespEventStreamAdapter) Close() error {
 	return a.stream.Close()
 }

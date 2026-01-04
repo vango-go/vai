@@ -34,6 +34,7 @@ import (
 	"github.com/vango-go/vai/pkg/core/providers/anthropic"
 	"github.com/vango-go/vai/pkg/core/providers/cerebras"
 	"github.com/vango-go/vai/pkg/core/providers/groq"
+	"github.com/vango-go/vai/pkg/core/providers/oai_resp"
 	"github.com/vango-go/vai/pkg/core/providers/openai"
 	"github.com/vango-go/vai/pkg/core/voice"
 	"github.com/vango-go/vai/pkg/core/voice/stt"
@@ -112,10 +113,16 @@ func (c *Client) initProviders() {
 		c.core.RegisterProvider(newAnthropicAdapter(anthropic.New(anthropicKey)))
 	}
 
-	// Register OpenAI if API key is available
+	// Register OpenAI Chat Completions if API key is available
 	openaiKey := c.core.GetAPIKey("openai")
 	if openaiKey != "" {
 		c.core.RegisterProvider(newOpenAIAdapter(openai.New(openaiKey)))
+	}
+
+	// Register OpenAI Responses API (oai-resp) if API key is available
+	// Uses the same API key as OpenAI but with different endpoint
+	if openaiKey != "" {
+		c.core.RegisterProvider(newOaiRespAdapter(oai_resp.New(openaiKey)))
 	}
 
 	// Register Groq if API key is available
