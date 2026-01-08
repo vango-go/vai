@@ -33,6 +33,7 @@ import (
 	"github.com/vango-go/vai/pkg/core"
 	"github.com/vango-go/vai/pkg/core/providers/anthropic"
 	"github.com/vango-go/vai/pkg/core/providers/cerebras"
+	"github.com/vango-go/vai/pkg/core/providers/gemini_oauth"
 	"github.com/vango-go/vai/pkg/core/providers/groq"
 	"github.com/vango-go/vai/pkg/core/providers/oai_resp"
 	"github.com/vango-go/vai/pkg/core/providers/openai"
@@ -135,6 +136,19 @@ func (c *Client) initProviders() {
 	cerebrasKey := c.core.GetAPIKey("cerebras")
 	if cerebrasKey != "" {
 		c.core.RegisterProvider(newCerebrasAdapter(cerebras.New(cerebrasKey)))
+	}
+
+	// Register Gemini OAuth if credentials are available
+	// Credentials are stored at ~/.config/vango/gemini-oauth-credentials.json
+	// Project ID can be overridden via GEMINI_OAUTH_PROJECT_ID env var
+	var geminiOAuthOpts []gemini_oauth.Option
+	if projectID := os.Getenv("GEMINI_OAUTH_PROJECT_ID"); projectID != "" {
+		geminiOAuthOpts = append(geminiOAuthOpts, gemini_oauth.WithProjectID(projectID))
+	}
+	if provider, err := gemini_oauth.New(geminiOAuthOpts...); err == nil {
+		c.core.RegisterProvider(newGeminiOAuthAdapter(provider))
+	} else {
+		c.logger.Debug("gemini-oauth provider not initialized", "error", err)
 	}
 }
 

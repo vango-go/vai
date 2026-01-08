@@ -1616,6 +1616,7 @@ GET /v1/models?capability=tools
 | OpenAI | Chat Completions | Primary |
 | OpenAI | Responses API | For image gen, file search |
 | Google | Gemini API | Vertex or AI Studio |
+| Gemini OAuth | Cloud Code Assist | Uses Google OAuth instead of API key |
 | Groq | OpenAI-compatible | Fast inference |
 | Mistral | Chat API | Similar to OpenAI |
 | Together | OpenAI-compatible | Open models |
@@ -1886,6 +1887,8 @@ observability:
 | `ANTHROPIC_API_KEY` | Anthropic API key |
 | `OPENAI_API_KEY` | OpenAI API key |
 | `GOOGLE_API_KEY` | Google API key |
+| `GEMINI_OAUTH_PROJECT_ID` | Google Cloud project ID for Gemini OAuth |
+| `GEMINI_OAUTH_CREDENTIALS_PATH` | Custom path for OAuth credentials file |
 | `GROQ_API_KEY` | Groq API key |
 | `DEEPGRAM_API_KEY` | Deepgram STT key |
 | `ELEVENLABS_API_KEY` | ElevenLabs TTS key |
@@ -2143,6 +2146,16 @@ The schema can be used to:
 
 **Gemini 2.0 Series:**
 - `gemini/gemini-2.0-flash` - Latest stable Flash model
+
+### Gemini OAuth
+
+Uses Google OAuth authentication via Cloud Code Assist endpoint. Allows using your existing Gemini plan quota instead of API billing. Same models as Google Gemini but with `gemini-oauth/` prefix:
+
+- `gemini-oauth/gemini-2.5-flash` - Balanced model (recommended)
+- `gemini-oauth/gemini-2.5-pro` - Powerful model for complex tasks
+- `gemini-oauth/gemini-2.0-flash` - Latest stable Flash model
+
+**Setup:** Run OAuth login first to store credentials at `~/.config/vango/gemini-oauth-credentials.json`, then set `GEMINI_OAUTH_PROJECT_ID` environment variable.
 
 ### Groq
 - `groq/llama-3.3-70b`

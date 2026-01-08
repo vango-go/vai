@@ -233,7 +233,7 @@ func (s *Session) initComponents() error {
 		func() { s.emit(&InterruptDetectingEvent{}) },
 		func(transcript string) { s.emit(&InterruptCapturedEvent{Transcript: transcript}) },
 		func(transcript, reason string) { s.onInterruptDismissed(transcript, reason) },
-		func(transcript string) { s.onInterruptConfirmed(transcript) },
+		nil, // Removed: onConfirmed - logic moved to handleInterruptResult
 		func(category, message string) { s.debug(category, message) },
 	)
 
@@ -312,13 +312,40 @@ func (s *Session) Commit() error {
 func (s *Session) Interrupt(transcript string) error {
 	s.mu.Lock()
 	state := s.state
+	partial := s.partialResponse
 	s.mu.Unlock()
 
 	if state != StateSpeaking && state != StateProcessing {
 		return fmt.Errorf("nothing to interrupt")
 	}
 
-	s.onInterruptConfirmed(transcript)
+	// Save partial assistant response to conversation history
+	s.mu.Lock()
+	if partial != "" {
+		s.messages = append(s.messages, types.Message{
+			Role:    "assistant",
+			Content: partial,
+		})
+	}
+	s.mu.Unlock()
+
+	// Emit interrupt event
+	s.emit(&ResponseInterruptedEvent{
+		PartialText:         partial,
+		InterruptTranscript: transcript,
+		AudioPositionMs:     s.ttsPosition,
+	})
+
+	// Cancel agent/TTS and flush audio
+	s.cancelAgent()
+	s.cancelTTS()
+	s.emit(&AudioFlushEvent{})
+	s.setState(StateListening)
+
+	// Process interrupt through normal VAD commit flow
+	s.vad.SetTranscript(transcript)
+	s.onVADCommit(transcript, false)
+
 	return nil
 }
 
@@ -737,14 +764,39 @@ func (s *Session) handleInterruptResult(result InterruptResult) {
 		s.setState(StateSpeaking)
 
 	case InterruptReal:
-		// Cancel everything and go to listening
-		s.debug("INTERRUPT", "Real interrupt confirmed, canceling agent")
+		s.debug("INTERRUPT", "Real interrupt confirmed")
+
+		// Get the interrupt transcript
+		transcript := s.interrupt.GetCapturedTranscript()
+
+		// Save partial assistant response to conversation history
+		s.mu.Lock()
+		partial := s.partialResponse
+		if partial != "" {
+			s.messages = append(s.messages, types.Message{
+				Role:    "assistant",
+				Content: partial,
+			})
+		}
+		s.mu.Unlock()
+
+		// Emit interrupt event
+		s.emit(&ResponseInterruptedEvent{
+			PartialText:         partial,
+			InterruptTranscript: transcript,
+			AudioPositionMs:     s.ttsPosition,
+		})
+
+		// Cancel agent/TTS and flush audio
 		s.cancelAgent()
 		s.cancelTTS()
-		// Signal client to flush audio buffers immediately
 		s.emit(&AudioFlushEvent{})
 		s.setState(StateListening)
-		s.emit(&VADListeningEvent{})
+
+		// Process interrupt through normal VAD commit flow
+		// This starts agent processing + grace period for continuation
+		s.vad.SetTranscript(transcript)
+		s.onVADCommit(transcript, false)
 	}
 }
 
@@ -827,21 +879,6 @@ func (s *Session) onInterruptDismissed(transcript, reason string) {
 	})
 }
 
-// onInterruptConfirmed is called when a real interrupt is confirmed.
-func (s *Session) onInterruptConfirmed(transcript string) {
-	s.mu.Lock()
-	partial := s.partialResponse
-	s.mu.Unlock()
-
-	s.emit(&ResponseInterruptedEvent{
-		PartialText:         partial,
-		InterruptTranscript: transcript,
-		AudioPositionMs:     s.ttsPosition,
-	})
-
-	// Set the interrupt transcript as the new input
-	s.vad.SetTranscript(transcript)
-}
 
 // startAgentProcessing begins the agent response generation.
 func (s *Session) startAgentProcessing(transcript string) {
