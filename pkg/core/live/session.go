@@ -581,6 +581,27 @@ func (s *Session) processAudio(data []byte) {
 		// Note: VAD turn detection is now handled via punctuation triggers in processTranscriptDelta
 		// No need to call vad.ProcessAudio - the timeout checker runs in background
 
+	case StateProcessing:
+		// During processing (e.g., waiting for server-side tool execution like web_search),
+		// we should still detect user speech for potential interrupts.
+		// This is important because the LLM might call a tool before emitting any text,
+		// keeping the state in StateProcessing for several seconds.
+		energy := CalculateRMSEnergy(data)
+		if energy > s.config.Interrupt.EnergyThreshold {
+			s.debug("INTERRUPT", "Speech detected during PROCESSING state")
+			// Cancel the agent immediately - user wants to interrupt before response starts
+			s.cancelAgent()
+			s.emit(&AudioFlushEvent{})
+			s.setState(StateListening)
+
+			// Send audio to STT to capture what the user said
+			s.sttMu.Lock()
+			if s.sttSession != nil {
+				s.sttSession.SendAudio(data)
+			}
+			s.sttMu.Unlock()
+		}
+
 	case StateGracePeriod:
 		// Detect user speech immediately via energy - cancel agent before it generates more
 		energy := CalculateRMSEnergy(data)

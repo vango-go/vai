@@ -51,6 +51,7 @@ func main() {
 	fmt.Println("║              Vango AI Live Voice Demo                      ║")
 	fmt.Println("╠════════════════════════════════════════════════════════════╣")
 	fmt.Println("║  Speak naturally - automatic turn detection is enabled.    ║")
+	fmt.Println("║  Web search is enabled for real-time information.          ║")
 	fmt.Println("║                                                            ║")
 	fmt.Println("║  Commands:                                                 ║")
 	fmt.Println("║    /t <text>       Send text message                       ║")
@@ -78,7 +79,8 @@ func main() {
 	// Create request - same as for regular chat, just add WithLive for voice mode
 	req := &vai.MessageRequest{
 		Model:  "anthropic/claude-haiku-4-5-20251001",
-		System: `You are in live voice mode right now (via STT <> TTS). This means you need to be more conversational in your responses. Sometimes a single word reply (e.g. "okay", "uh huh?") is appropriate. If you received the lastest user message, but you're not sure if they are actually done talking (e.g. they are trying to explain something and paused to think), you can give a short reply to help gauge. (e.g. "ya?", "uh huh?", "Are you done explaining? I have some thoughts..", etc..)`,
+		System: `You are in live voice mode right now (via STT <> TTS). This means you need to be more conversational in your responses. Sometimes a single word reply (e.g. "okay", "uh huh?") is appropriate. If you received the lastest user message, but you're not sure if they are actually done talking (e.g. they are trying to explain something and paused to think), you can give a short reply to help gauge. (e.g. "ya?", "uh huh?", "Are you done explaining? I have some thoughts..", etc..). You have access to web search - use it when users ask about current events, recent information, or anything that might benefit from up-to-date data.`,
+		Tools:  []vai.Tool{vai.WebSearch()},
 	}
 
 	// Start live session via RunStream with WithLive option
