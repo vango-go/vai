@@ -1,0 +1,20 @@
+host: "0.0.0.0"
+port: 8080
+
+auth_mode: "passthrough"
+
+rate_limit:
+  enabled: true
+  global_requests_per_minute: 1000000
+  user_requests_per_minute: 100000
+  max_concurrent_sessions: 1000
+  session_idle_timeout: 5m
+
+observability:
+  metrics_enabled: true
+  metrics_path: "/metrics"
+  log_level: "info"
+  log_format: "json"
+
+allowed_origins: ["*"]
+max_request_body_bytes: 10485760
