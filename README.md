@@ -17,19 +17,23 @@ bookFlight := vai.FuncAsTool("book_flight", "Book a flight",
 )
 
 // Run with native web search + custom tool
+messages := []vai.Message{
+    {Role: "user", Content: vai.Text("Find flights from NYC to Tokyo next week and book the best one")},
+}
+
 stream, _ := client.Messages.RunStream(ctx, &vai.MessageRequest{
     Model: "anthropic/claude-sonnet-4",
-    Messages: []vai.Message{
-        {Role: "user", Content: vai.Text("Find flights from NYC to Tokyo next week and book the best one")},
-    },
+    Messages: messages,
     Tools: []vai.Tool{vai.WebSearch(), bookFlight},
 })
 
+applyHistory := vai.DefaultHistoryHandler(&messages)
 for event := range stream.Events() {
-    switch e := event.(type) {
-    case *vai.TextDeltaEvent:
-        fmt.Print(e.Delta)
-    case *vai.ToolCallEvent:
+    applyHistory(event)
+    if text, ok := vai.TextDeltaFrom(event); ok {
+        fmt.Print(text)
+    }
+    if e, ok := event.(vai.ToolCallStartEvent); ok {
         fmt.Printf("\n[%s] %v\n", e.Name, e.Input)
     }
 }

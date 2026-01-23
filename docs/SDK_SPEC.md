@@ -782,22 +782,31 @@ if err != nil {
 }
 defer stream.Close()
 
+messages := append([]vai.Message(nil), req.Messages...)
+applyHistory := vai.DefaultHistoryHandler(&messages)
+
 for event := range stream.Events() {
+    applyHistory(event)
     switch e := event.(type) {
-    case *vai.ContentBlockDeltaEvent:
-        fmt.Print(e.Delta.(*vai.TextDelta).Text)
-    case *vai.ToolCallStartEvent:
+    case vai.StreamEventWrapper:
+        if text, ok := vai.TextDeltaFrom(e); ok {
+            fmt.Print(text)
+        }
+    case vai.ToolCallStartEvent:
         fmt.Printf("\n[Calling %s...]\n", e.Name)
-    case *vai.ToolResultEvent:
+    case vai.ToolResultEvent:
         fmt.Printf("[Result received]\n")
-    case *vai.StepCompleteEvent:
+    case vai.StepCompleteEvent:
         fmt.Printf("\n--- Step %d complete ---\n", e.Index)
     }
 }
 
 result := stream.Result()
 fmt.Printf("Total tool calls: %d\n", result.ToolCallCount)
+fmt.Printf(\"History messages: %d\\n\", len(messages))
 ```
+
+RunStream emits `HistoryDeltaEvent` after each step (and on interrupt saves) so callers can update history deterministically. `DefaultHistoryHandler` consumes these deltas and appends to a caller-owned `[]Message`.
 
 ---
 

@@ -31,12 +31,13 @@ const (
 
 // RunResult contains the result of a tool execution loop.
 type RunResult struct {
-	Response      *Response     `json:"response"`
-	Steps         []RunStep     `json:"steps"`
-	ToolCallCount int           `json:"tool_call_count"`
-	TurnCount     int           `json:"turn_count"`
-	Usage         types.Usage   `json:"usage"`
-	StopReason    RunStopReason `json:"stop_reason"`
+	Response      *Response       `json:"response"`
+	Steps         []RunStep       `json:"steps"`
+	ToolCallCount int             `json:"tool_call_count"`
+	TurnCount     int             `json:"turn_count"`
+	Usage         types.Usage     `json:"usage"`
+	StopReason    RunStopReason   `json:"stop_reason"`
+	Messages      []types.Message `json:"messages,omitempty"`
 }
 
 // RunStep represents a single step in the tool execution loop.
@@ -315,6 +316,38 @@ func (s *MessagesService) runLoop(ctx context.Context, req *MessageRequest, cfg 
 	messages := make([]types.Message, len(req.Messages))
 	copy(messages, req.Messages)
 
+	appendAssistantMessage := func(resp *Response) {
+		messages = append(messages, types.Message{
+			Role:    "assistant",
+			Content: resp.Content,
+		})
+	}
+
+	appendToolResults := func(toolResults []ToolExecutionResult) {
+		if len(toolResults) == 0 {
+			return
+		}
+		toolResultBlocks := make([]types.ContentBlock, len(toolResults))
+		for i, tr := range toolResults {
+			toolResultBlocks[i] = types.ToolResultBlock{
+				Type:      "tool_result",
+				ToolUseID: tr.ToolUseID,
+				Content:   tr.Content,
+				IsError:   tr.Error != nil,
+			}
+		}
+		messages = append(messages, types.Message{
+			Role:    "user",
+			Content: toolResultBlocks,
+		})
+	}
+
+	snapshotMessages := func() []types.Message {
+		out := make([]types.Message, len(messages))
+		copy(out, messages)
+		return out
+	}
+
 	// Apply timeout if configured
 	if cfg.timeout > 0 {
 		var cancel context.CancelFunc
@@ -328,6 +361,7 @@ func (s *MessagesService) runLoop(ctx context.Context, req *MessageRequest, cfg 
 		select {
 		case <-ctx.Done():
 			result.StopReason = RunStopTimeout
+			result.Messages = snapshotMessages()
 			if cfg.onStop != nil {
 				cfg.onStop(result)
 			}
@@ -338,6 +372,7 @@ func (s *MessagesService) runLoop(ctx context.Context, req *MessageRequest, cfg 
 		// Check turn limit
 		if cfg.maxTurns > 0 && result.TurnCount >= cfg.maxTurns {
 			result.StopReason = RunStopMaxTurns
+			result.Messages = snapshotMessages()
 			if cfg.onStop != nil {
 				cfg.onStop(result)
 			}
@@ -347,6 +382,7 @@ func (s *MessagesService) runLoop(ctx context.Context, req *MessageRequest, cfg 
 		// Check token limit
 		if cfg.maxTokens > 0 && result.Usage.TotalTokens >= cfg.maxTokens {
 			result.StopReason = RunStopMaxTokens
+			result.Messages = snapshotMessages()
 			if cfg.onStop != nil {
 				cfg.onStop(result)
 			}
@@ -384,6 +420,7 @@ func (s *MessagesService) runLoop(ctx context.Context, req *MessageRequest, cfg 
 
 		if err != nil {
 			result.StopReason = RunStopError
+			result.Messages = snapshotMessages()
 			if cfg.onStop != nil {
 				cfg.onStop(result)
 			}
@@ -408,9 +445,11 @@ func (s *MessagesService) runLoop(ctx context.Context, req *MessageRequest, cfg 
 
 		// Check custom stop condition
 		if cfg.stopWhen != nil && cfg.stopWhen(resp) {
+			appendAssistantMessage(resp)
 			result.Response = resp
 			result.Steps = append(result.Steps, step)
 			result.StopReason = RunStopCustom
+			result.Messages = snapshotMessages()
 			if cfg.onStop != nil {
 				cfg.onStop(result)
 			}
@@ -419,9 +458,11 @@ func (s *MessagesService) runLoop(ctx context.Context, req *MessageRequest, cfg 
 
 		// Check if model finished without tool calls
 		if resp.StopReason != types.StopReasonToolUse {
+			appendAssistantMessage(resp)
 			result.Response = resp
 			result.Steps = append(result.Steps, step)
 			result.StopReason = RunStopEndTurn
+			result.Messages = snapshotMessages()
 			if cfg.onStop != nil {
 				cfg.onStop(result)
 			}
@@ -431,9 +472,11 @@ func (s *MessagesService) runLoop(ctx context.Context, req *MessageRequest, cfg 
 		// Process tool calls
 		toolUses := resp.ToolUses()
 		if len(toolUses) == 0 {
+			appendAssistantMessage(resp)
 			result.Response = resp
 			result.Steps = append(result.Steps, step)
 			result.StopReason = RunStopEndTurn
+			result.Messages = snapshotMessages()
 			if cfg.onStop != nil {
 				cfg.onStop(result)
 			}
@@ -442,9 +485,11 @@ func (s *MessagesService) runLoop(ctx context.Context, req *MessageRequest, cfg 
 
 		// Check tool call limit
 		if cfg.maxToolCalls > 0 && result.ToolCallCount+len(toolUses) > cfg.maxToolCalls {
+			appendAssistantMessage(resp)
 			result.Response = resp
 			result.Steps = append(result.Steps, step)
 			result.StopReason = RunStopMaxToolCalls
+			result.Messages = snapshotMessages()
 			if cfg.onStop != nil {
 				cfg.onStop(result)
 			}
@@ -467,25 +512,8 @@ func (s *MessagesService) runLoop(ctx context.Context, req *MessageRequest, cfg 
 		result.ToolCallCount += len(toolUses)
 
 		// Append assistant message with tool calls
-		messages = append(messages, types.Message{
-			Role:    "assistant",
-			Content: resp.Content,
-		})
-
-		// Append tool results as user message
-		toolResultBlocks := make([]types.ContentBlock, len(toolResults))
-		for i, tr := range toolResults {
-			toolResultBlocks[i] = types.ToolResultBlock{
-				Type:      "tool_result",
-				ToolUseID: tr.ToolUseID,
-				Content:   tr.Content,
-				IsError:   tr.Error != nil,
-			}
-		}
-		messages = append(messages, types.Message{
-			Role:    "user",
-			Content: toolResultBlocks,
-		})
+		appendAssistantMessage(resp)
+		appendToolResults(toolResults)
 	}
 }
 
@@ -730,6 +758,14 @@ type StepCompleteEvent struct {
 }
 
 func (e StepCompleteEvent) runStreamEventType() string { return "step_complete" }
+
+// HistoryDeltaEvent signals messages to append to history.
+// For non-live RunStream, this is emitted after StepCompleteEvent.
+type HistoryDeltaEvent struct {
+	Append []types.Message `json:"append"`
+}
+
+func (e HistoryDeltaEvent) runStreamEventType() string { return "history_delta" }
 
 // RunCompleteEvent signals the run is complete.
 type RunCompleteEvent struct {
@@ -1021,6 +1057,24 @@ func (rs *RunStream) run(ctx context.Context, svc *MessagesService, req *Message
 	}
 	defer finishVoice() // Ensure cleanup on any exit
 
+	appendHistoryDelta := func(delta []types.Message) {
+		if len(delta) == 0 {
+			return
+		}
+		rs.mu.Lock()
+		rs.messages = append(rs.messages, delta...)
+		rs.mu.Unlock()
+		rs.send(HistoryDeltaEvent{Append: delta})
+	}
+
+	snapshotHistory := func() []types.Message {
+		rs.mu.RLock()
+		out := make([]types.Message, len(rs.messages))
+		copy(out, rs.messages)
+		rs.mu.RUnlock()
+		return out
+	}
+
 	stepIndex := 0
 
 	// Track tool blocks as they're being built (persists across turns for interrupt recovery)
@@ -1035,6 +1089,7 @@ func (rs *RunStream) run(ctx context.Context, svc *MessagesService, req *Message
 		select {
 		case <-ctx.Done():
 			result.StopReason = RunStopTimeout
+			result.Messages = snapshotHistory()
 			rs.result = result
 			rs.err = ctx.Err()
 			return
@@ -1044,6 +1099,7 @@ func (rs *RunStream) run(ctx context.Context, svc *MessagesService, req *Message
 		// Check limits
 		if cfg.maxTurns > 0 && result.TurnCount >= cfg.maxTurns {
 			result.StopReason = RunStopMaxTurns
+			result.Messages = snapshotHistory()
 			rs.result = result
 			finishVoice()
 			rs.send(RunCompleteEvent{Result: result})
@@ -1052,6 +1108,7 @@ func (rs *RunStream) run(ctx context.Context, svc *MessagesService, req *Message
 
 		if cfg.maxTokens > 0 && result.Usage.TotalTokens >= cfg.maxTokens {
 			result.StopReason = RunStopMaxTokens
+			result.Messages = snapshotHistory()
 			rs.result = result
 			finishVoice()
 			rs.send(RunCompleteEvent{Result: result})
@@ -1093,6 +1150,7 @@ func (rs *RunStream) run(ctx context.Context, svc *MessagesService, req *Message
 		stream, err := svc.Stream(ctx, turnReq)
 		if err != nil {
 			result.StopReason = RunStopError
+			result.Messages = snapshotHistory()
 			rs.result = result
 			rs.err = err
 			return
@@ -1113,6 +1171,7 @@ func (rs *RunStream) run(ctx context.Context, svc *MessagesService, req *Message
 			case <-ctx.Done():
 				stream.Close()
 				result.StopReason = RunStopTimeout
+				result.Messages = snapshotHistory()
 				rs.result = result
 				rs.err = ctx.Err()
 				return
@@ -1125,18 +1184,19 @@ func (rs *RunStream) run(ctx context.Context, svc *MessagesService, req *Message
 				partialText := rs.partialContent.String()
 				rs.currentStream = nil
 				rs.partialContent.Reset()
+				rs.mu.Unlock()
 
 				// Check if this is Cancel (empty message) or Interrupt (has message)
 				isCancel := intReq.message.Role == "" && intReq.message.Content == nil
 
 				if !isCancel {
-					// Interrupt scenario: Save partial and inject new message
+					var delta []types.Message
 
 					// Handle partial response based on behavior
 					switch intReq.behavior {
 					case InterruptSavePartial:
 						if partialText != "" {
-							rs.messages = append(rs.messages, types.Message{
+							delta = append(delta, types.Message{
 								Role: "assistant",
 								Content: []types.ContentBlock{
 									types.TextBlock{Type: "text", Text: partialText},
@@ -1145,7 +1205,7 @@ func (rs *RunStream) run(ctx context.Context, svc *MessagesService, req *Message
 						}
 					case InterruptSaveMarked:
 						if partialText != "" {
-							rs.messages = append(rs.messages, types.Message{
+							delta = append(delta, types.Message{
 								Role: "assistant",
 								Content: []types.ContentBlock{
 									types.TextBlock{Type: "text", Text: partialText + " [interrupted]"},
@@ -1157,9 +1217,9 @@ func (rs *RunStream) run(ctx context.Context, svc *MessagesService, req *Message
 					}
 
 					// Inject the new message
-					rs.messages = append(rs.messages, intReq.message)
+					delta = append(delta, intReq.message)
+					appendHistoryDelta(delta)
 				}
-				rs.mu.Unlock()
 
 				// Notify caller
 				intReq.result <- nil
@@ -1168,6 +1228,7 @@ func (rs *RunStream) run(ctx context.Context, svc *MessagesService, req *Message
 					// Cancel: Terminate the run loop
 					rs.send(InterruptedEvent{PartialText: partialText, Behavior: InterruptDiscard})
 					result.StopReason = RunStopCancelled
+					result.Messages = snapshotHistory()
 					rs.result = result
 					finishVoice()
 					rs.send(RunCompleteEvent{Result: result})
@@ -1267,6 +1328,7 @@ func (rs *RunStream) run(ctx context.Context, svc *MessagesService, req *Message
 		// EOF is normal stream termination, not an error
 		if streamErr := stream.Err(); streamErr != nil && streamErr != io.EOF {
 			result.StopReason = RunStopError
+			result.Messages = snapshotHistory()
 			rs.result = result
 			rs.err = streamErr
 			stream.Close()
@@ -1298,6 +1360,10 @@ func (rs *RunStream) run(ctx context.Context, svc *MessagesService, req *Message
 			result.Steps = append(result.Steps, step)
 			result.StopReason = RunStopCustom
 			rs.send(StepCompleteEvent{Index: stepIndex, Response: resp})
+			appendHistoryDelta([]types.Message{
+				{Role: "assistant", Content: resp.Content},
+			})
+			result.Messages = snapshotHistory()
 			finishVoice()
 			rs.result = result
 			rs.send(RunCompleteEvent{Result: result})
@@ -1310,6 +1376,10 @@ func (rs *RunStream) run(ctx context.Context, svc *MessagesService, req *Message
 			result.Steps = append(result.Steps, step)
 			result.StopReason = RunStopEndTurn
 			rs.send(StepCompleteEvent{Index: stepIndex, Response: resp})
+			appendHistoryDelta([]types.Message{
+				{Role: "assistant", Content: resp.Content},
+			})
+			result.Messages = snapshotHistory()
 			finishVoice()
 			rs.result = result
 			rs.send(RunCompleteEvent{Result: result})
@@ -1323,6 +1393,10 @@ func (rs *RunStream) run(ctx context.Context, svc *MessagesService, req *Message
 			result.Steps = append(result.Steps, step)
 			result.StopReason = RunStopEndTurn
 			rs.send(StepCompleteEvent{Index: stepIndex, Response: resp})
+			appendHistoryDelta([]types.Message{
+				{Role: "assistant", Content: resp.Content},
+			})
+			result.Messages = snapshotHistory()
 			finishVoice()
 			rs.result = result
 			rs.send(RunCompleteEvent{Result: result})
@@ -1335,6 +1409,10 @@ func (rs *RunStream) run(ctx context.Context, svc *MessagesService, req *Message
 			result.Steps = append(result.Steps, step)
 			result.StopReason = RunStopMaxToolCalls
 			rs.send(StepCompleteEvent{Index: stepIndex, Response: resp})
+			appendHistoryDelta([]types.Message{
+				{Role: "assistant", Content: resp.Content},
+			})
+			result.Messages = snapshotHistory()
 			finishVoice()
 			rs.result = result
 			rs.send(RunCompleteEvent{Result: result})
@@ -1362,13 +1440,6 @@ func (rs *RunStream) run(ctx context.Context, svc *MessagesService, req *Message
 
 		rs.send(StepCompleteEvent{Index: stepIndex, Response: resp})
 
-		// Append messages for next turn
-		rs.mu.Lock()
-		rs.messages = append(rs.messages, types.Message{
-			Role:    "assistant",
-			Content: resp.Content,
-		})
-
 		toolResultBlocks := make([]types.ContentBlock, len(toolResults))
 		for i, tr := range toolResults {
 			toolResultBlocks[i] = types.ToolResultBlock{
@@ -1378,11 +1449,10 @@ func (rs *RunStream) run(ctx context.Context, svc *MessagesService, req *Message
 				IsError:   tr.Error != nil,
 			}
 		}
-		rs.messages = append(rs.messages, types.Message{
-			Role:    "user",
-			Content: toolResultBlocks,
+		appendHistoryDelta([]types.Message{
+			{Role: "assistant", Content: resp.Content},
+			{Role: "user", Content: toolResultBlocks},
 		})
-		rs.mu.Unlock()
 
 		stepIndex++
 	}

@@ -313,6 +313,7 @@ func TestRunStreamEvents(t *testing.T) {
 		ToolCallStartEvent{ID: "call_1", Name: "test", Input: nil},
 		ToolResultEvent{ID: "call_1", Name: "test", Content: nil},
 		StepCompleteEvent{Index: 0, Response: nil},
+		HistoryDeltaEvent{Append: nil},
 		RunCompleteEvent{Result: nil},
 	}
 
@@ -322,6 +323,7 @@ func TestRunStreamEvents(t *testing.T) {
 		"tool_call_start",
 		"tool_result",
 		"step_complete",
+		"history_delta",
 		"run_complete",
 	}
 
