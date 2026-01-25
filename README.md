@@ -1,87 +1,85 @@
-# VAI - Vango AI
+# Vango AI
 
-**A unified AI gateway for Go.** One API, every LLM provider.
+**One API for every LLM. Text, tools, and voice.**
+
+Vango AI is a unified Go SDK and self-hostable gateway for LLM providers. Switch between Anthropic, OpenAI, Gemini, Groq, and Mistral by changing one string. Built-in tool execution loops, streaming, and a complete voice pipeline (STT → LLM → TTS).
 
 ```go
-client := vai.NewClient()
-
-// Define a custom tool
-bookFlight := vai.FuncAsTool("book_flight", "Book a flight",
-    func(ctx context.Context, input struct {
-        From string `json:"from"`
-        To   string `json:"to"`
-        Date string `json:"date"`
-    }) (string, error) {
-        return fmt.Sprintf("Booked: %s → %s on %s", input.From, input.To, input.Date), nil
-    },
-)
-
-// Run with native web search + custom tool
-messages := []vai.Message{
-    {Role: "user", Content: vai.Text("Find flights from NYC to Tokyo next week and book the best one")},
-}
-
 stream, _ := client.Messages.RunStream(ctx, &vai.MessageRequest{
     Model: "anthropic/claude-sonnet-4",
-    Messages: messages,
-    Tools: []vai.Tool{vai.WebSearch(), bookFlight},
-})
+    Messages: []vai.Message{
+        {Role: "user", Content: vai.Text("Find the top 3 AI papers from this week and summarize them")},
+    },
+    Tools: []vai.Tool{vai.WebSearch()},
+}, vai.WithMaxToolCalls(10))
 
-applyHistory := vai.DefaultHistoryHandler(&messages)
 for event := range stream.Events() {
-    applyHistory(event)
     if text, ok := vai.TextDeltaFrom(event); ok {
         fmt.Print(text)
     }
-    if e, ok := event.(vai.ToolCallStartEvent); ok {
-        fmt.Printf("\n[%s] %v\n", e.Name, e.Input)
-    }
 }
 ```
 
-Switch providers by changing one string:
+## Why Vango AI?
+
+| Problem | Vango AI Solution |
+|---------|-------------------|
+| Every provider has a different API | One unified interface for all providers |
+| Tool loops require manual orchestration | `RunStream()` handles the entire loop |
+| Voice requires stitching multiple services | Built-in STT → LLM → TTS pipeline |
+| Provider lock-in | Switch models with one string change |
+
+## API Design
+
+Vango AI normalizes all providers to **Anthropic's Messages API** format. We chose this as the canonical format because it offers:
+
+- **Clean content block model** — Extensible for text, images, audio, tools, and future modalities
+- **Explicit tool use flow** — Clear separation between tool calls and tool results
+- **Well-designed streaming** — Lifecycle events (`message_start`, `content_block_delta`, `message_stop`) that map cleanly to UI updates
+- **First-class multimodal support** — Content as typed blocks, not string hacks
+
+If you've used the Anthropic SDK, the Vango AI API will feel immediately familiar:
 
 ```go
-Model: "openai/gpt-5"          // OpenAI
-Model: "gemini/gemini-3.0-flash" // Google
-Model: "groq/llama-3.3-70b"    // Groq (fast)
+// This is valid Vango AI code — and almost identical to Anthropic's SDK
+resp, _ := client.Messages.Create(ctx, &vai.MessageRequest{
+    Model:     "anthropic/claude-sonnet-4",  // Just add the provider prefix
+    MaxTokens: 1024,
+    Messages: []vai.Message{
+        {Role: "user", Content: []vai.ContentBlock{
+            vai.Text("What's in this image?"),
+            vai.Image(imageData, "image/png"),
+        }},
+    },
+})
 ```
 
----
+The same request works with any provider — Vango handles the translation:
 
-## Why VAI?
-
-| Problem | VAI Solution |
-|---------|--------------|
-| Different APIs for each provider | Single unified API (Anthropic Messages format) |
-| Inconsistent tool implementations | Native tools (`web_search`, `code_execution`) work identically across providers |
-| No voice support in most SDKs | Built-in STT → LLM → TTS pipeline |
-| Proxy required for abstraction | **Direct Mode**: No proxy needed. Import and go. |
-| Hard to switch providers | Change one string: `anthropic/claude-haiku-4-5-20251001` → `openai/gpt-5-mini` |
-
----
+```go
+// Switch to OpenAI by changing one string
+resp, _ := client.Messages.Create(ctx, &vai.MessageRequest{
+    Model: "openai/gpt-4o",  // Vango translates to OpenAI's Chat Completions format
+    // ... same request structure
+})
+```
 
 ## Installation
 
 ```bash
-go get github.com/vango-go/vai
+go get github.com/vango-ai/vai
 ```
-
-**Requirements:** Go 1.21+
-
----
 
 ## Quick Start
 
-### 1. Set API Keys
+### Direct Mode (No Server Required)
+
+The SDK runs the translation engine directly in your process. Just set your provider API keys as environment variables:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
 export OPENAI_API_KEY=sk-...
-# Add keys for providers you want to use
 ```
-
-### 2. Simple Request
 
 ```go
 package main
@@ -89,27 +87,39 @@ package main
 import (
     "context"
     "fmt"
-    "github.com/vango-go/vai"
+    "github.com/vango-ai/vai"
 )
 
 func main() {
     client := vai.NewClient()
 
-    resp, err := client.Messages.Create(context.Background(), &vai.MessageRequest{
+    resp, _ := client.Messages.Create(context.Background(), &vai.MessageRequest{
         Model: "anthropic/claude-sonnet-4",
         Messages: []vai.Message{
-            {Role: "user", Content: vai.Text("What is the capital of France?")},
+            {Role: "user", Content: vai.Text("Hello!")},
         },
     })
-    if err != nil {
-        panic(err)
-    }
 
     fmt.Println(resp.TextContent())
 }
 ```
 
-### 3. Streaming
+### Proxy Mode (For Production)
+
+For centralized key management, observability, and multi-language support:
+
+```go
+client := vai.NewClient(
+    vai.WithBaseURL("http://vai-proxy.internal:8080"),
+    vai.WithAPIKey("vai_sk_..."),
+)
+```
+
+## Core Features
+
+### Streaming
+
+Real-time token streaming with typed events:
 
 ```go
 stream, _ := client.Messages.Stream(ctx, &vai.MessageRequest{
@@ -129,146 +139,53 @@ for event := range stream.Events() {
 }
 ```
 
-### 4. Tool Use (Agentic)
+### Tool Execution Loop
+
+`Run()` and `RunStream()` handle the complete tool loop—you define the tools, Vango executes them:
 
 ```go
-// Define a tool with type-safe handler
 weatherTool := vai.FuncAsTool(
     "get_weather",
     "Get current weather for a location",
     func(ctx context.Context, input struct {
         Location string `json:"location" desc:"City name"`
     }) (string, error) {
-        return fmt.Sprintf("Weather in %s: 72°F, sunny", input.Location), nil
+        return fetchWeather(input.Location), nil
     },
 )
 
-// Run executes the tool loop automatically
 result, _ := client.Messages.Run(ctx, &vai.MessageRequest{
     Model: "anthropic/claude-sonnet-4",
     Messages: []vai.Message{
-        {Role: "user", Content: vai.Text("What's the weather in Tokyo?")},
+        {Role: "user", Content: vai.Text("What's the weather in Tokyo and Paris?")},
     },
     Tools: []vai.Tool{weatherTool},
 }, vai.WithMaxToolCalls(5))
 
 fmt.Println(result.Response.TextContent())
+fmt.Printf("Tool calls: %d\n", result.ToolCallCount)
 ```
 
-### 5. Native Tools
+### Native Tools
 
-VAI normalizes native tools across providers:
-
-```go
-// Web search works on Anthropic, OpenAI, and Gemini
-result, _ := client.Messages.Run(ctx, &vai.MessageRequest{
-    Model: "anthropic/claude-sonnet-4", // or openai/gpt-4o, gemini/gemini-2.0-flash
-    Messages: []vai.Message{
-        {Role: "user", Content: vai.Text("What happened in tech news today?")},
-    },
-    Tools: []vai.Tool{vai.WebSearch()},
-})
-```
-
-| VAI Tool | Anthropic | OpenAI | Gemini |
-|----------|-----------|--------|--------|
-| `vai.WebSearch()` | `web_search_20250305` | `web_search` | Google Search |
-| `vai.CodeExecution()` | `code_execution` | `code_interpreter` | Native |
-| `vai.ComputerUse()` | `computer_20250124` | `computer_use` | - |
-
-### 6. Vision
+Web search, code execution, and computer use work consistently across providers:
 
 ```go
-resp, _ := client.Messages.Create(ctx, &vai.MessageRequest{
-    Model: "openai/gpt-4o",
-    Messages: []vai.Message{
-        {Role: "user", Content: []vai.ContentBlock{
-            vai.Text("What's in this image?"),
-            vai.ImageURL("https://example.com/image.png"),
-        }},
-    },
-})
-```
-
-### 7. Structured Output
-
-```go
-type Person struct {
-    Name    string `json:"name" desc:"Full name"`
-    Age     int    `json:"age" desc:"Age in years"`
-    Company string `json:"company" desc:"Employer"`
+// Web search - translates to each provider's native implementation
+tools := []vai.Tool{
+    vai.WebSearch(),
+    vai.CodeExecution(),
 }
-
-var person Person
-resp, _ := client.Messages.Extract(ctx, &vai.MessageRequest{
-    Model: "openai/gpt-4o",
-    Messages: []vai.Message{
-        {Role: "user", Content: vai.Text("John Doe is a 30 year old engineer at Acme Corp.")},
-    },
-}, &person)
-
-fmt.Printf("%s (%d) works at %s\n", person.Name, person.Age, person.Company)
 ```
 
----
+| Tool | Anthropic | OpenAI | Gemini |
+|------|-----------|--------|--------|
+| `WebSearch()` | `web_search_20250305` | `web_search` | Google Search |
+| `CodeExecution()` | `code_execution` | `code_interpreter` | Native |
 
-## Architecture
+### Voice Pipeline
 
-VAI uses a **Shared Core** architecture:
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                        pkg/core                              │
-│              (The Source of Truth for All Logic)             │
-│                                                              │
-│   ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│   │  providers/  │  │    voice/    │  │    tools/    │      │
-│   │  anthropic   │  │   pipeline   │  │  normalize   │      │
-│   │  openai      │  │   stt/tts    │  │              │      │
-│   │  gemini      │  │              │  │              │      │
-│   └──────────────┘  └──────────────┘  └──────────────┘      │
-└─────────────────────────────────────────────────────────────┘
-                              │
-          ┌───────────────────┴───────────────────┐
-          ▼                                       ▼
-┌─────────────────────────┐     ┌─────────────────────────────┐
-│      GO SDK             │     │      VAI PROXY              │
-│   (Direct Mode)         │     │   (Server Mode)             │
-│                         │     │                             │
-│  import "vai/pkg/core"  │     │  import "vai/pkg/core"      │
-│  Executes in-process    │     │  Exposes /v1/messages       │
-│  Zero network latency   │     │  Centralized governance     │
-└─────────────────────────┘     └─────────────────────────────┘
-```
-
-### Two Modes
-
-| Feature | Direct Mode (Go SDK) | Proxy Mode (Server) |
-|---------|----------------------|---------------------|
-| **Use Case** | Local dev, CLIs, agents | Production, multi-language teams |
-| **Latency** | Zero (in-process) | Low (1 network hop) |
-| **Setup** | `go get` | Docker / K8s |
-| **Secrets** | Env vars | Centralized / Vault |
-| **Languages** | Go only | Any HTTP client |
-
-```go
-// Direct Mode (default) - SDK calls providers directly
-client := vai.NewClient()
-
-// Proxy Mode - SDK talks to VAI Proxy via HTTP
-client := vai.NewClient(
-    vai.WithBaseURL("http://vai-proxy.internal:8080"),
-    vai.WithAPIKey("vai_sk_..."),
-)
-```
-
----
-
-## Voice Pipeline
-
-VAI includes built-in voice support: **STT → LLM → TTS**
-
-### Audio Input/Output
+Add voice to any model with STT and TTS providers:
 
 ```go
 resp, _ := client.Messages.Create(ctx, &vai.MessageRequest{
@@ -282,182 +199,128 @@ resp, _ := client.Messages.Create(ctx, &vai.MessageRequest{
     },
 })
 
-// Response includes audio
+// Response includes both text and synthesized audio
+fmt.Println(resp.TextContent())
 playAudio(resp.AudioContent().Data())
 ```
 
-### Real-Time Voice (Live Sessions)
+### Live Voice Sessions
+
+Real-time bidirectional voice with intelligent turn-taking:
 
 ```go
 stream, _ := client.Messages.RunStream(ctx, &vai.MessageRequest{
     Model:  "anthropic/claude-sonnet-4",
     System: "You are a helpful voice assistant.",
+    Tools:  []vai.Tool{vai.WebSearch()},
     Voice: &vai.VoiceConfig{
         Input:  &vai.VoiceInputConfig{Provider: "cartesia"},
         Output: &vai.VoiceOutputConfig{Provider: "cartesia", Voice: "sonic-english"},
+        VAD:    &vai.VADConfig{SemanticCheck: true},
     },
 }, vai.WithLive(&vai.LiveConfig{SampleRate: 24000}))
-defer stream.Close()
 
-// Handle events
+// Send microphone audio
 go func() {
-    for event := range stream.Events() {
-        switch e := event.(type) {
-        case *vai.TranscriptDeltaEvent:
-            fmt.Print(e.Delta) // Real-time transcription
-        case *vai.AudioChunkEvent:
-            speaker.Write(e.Data) // Play audio
-        }
+    for chunk := range microphone.Chunks() {
+        stream.SendAudio(chunk)
     }
 }()
 
-// Send audio from microphone
-for chunk := range microphone.Chunks() {
-    stream.SendAudio(chunk)
+// Receive events
+for event := range stream.Events() {
+    switch e := event.(type) {
+    case *vai.TranscriptDeltaEvent:
+        fmt.Print(e.Delta) // Real-time transcription
+    case *vai.AudioChunkEvent:
+        speaker.Write(e.Data) // Play response audio
+    }
 }
 ```
 
-### Supported Providers
+### Structured Data Extraction
 
-| STT | TTS |
-|-----|-----|
-| Deepgram (`nova-2`, `nova`, `enhanced`) | ElevenLabs (100+ voices) |
-| OpenAI Whisper | OpenAI TTS (`alloy`, `echo`, `fable`, etc.) |
-| AssemblyAI | Cartesia (low latency) |
-
----
-
-## Supported Models
-
-### Anthropic
-- `anthropic/claude-sonnet-4`
-- `anthropic/claude-opus-4`
-- `anthropic/claude-haiku-3`
-
-### OpenAI
-- `openai/gpt-4o`
-- `openai/gpt-4o-mini`
-- `openai/o1`
-- `openai/o1-mini`
-
-### Google Gemini
-- `gemini/gemini-2.5-pro`
-- `gemini/gemini-2.5-flash`
-- `gemini/gemini-2.0-flash`
-
-### Groq (Fast Inference)
-- `groq/llama-3.3-70b`
-- `groq/llama-3.1-70b`
-- `groq/mixtral-8x7b`
-
-### Mistral
-- `mistral/mistral-large`
-- `mistral/mistral-small`
-- `mistral/codestral`
-
----
-
-## API Reference
-
-### Client
+Extract typed data with automatic schema generation:
 
 ```go
-// Direct Mode (default)
-client := vai.NewClient()
+type Contact struct {
+    Name  string `json:"name" desc:"Full name"`
+    Email string `json:"email" desc:"Email address"`
+    Role  string `json:"role" enum:"engineer,manager,designer"`
+}
 
-// With options
-client := vai.NewClient(
-    vai.WithProviderKey("anthropic", "sk-ant-..."),
-    vai.WithTimeout(30 * time.Second),
-    vai.WithRetries(3),
-    vai.WithLogger(slog.Default()),
-)
+var contact Contact
+client.Messages.Extract(ctx, &vai.MessageRequest{
+    Model: "openai/gpt-4o",
+    Messages: []vai.Message{
+        {Role: "user", Content: vai.Text("John Smith (john@example.com) is our lead engineer")},
+    },
+}, &contact)
 
-// Proxy Mode
-client := vai.NewClient(
-    vai.WithBaseURL("http://localhost:8080"),
-    vai.WithAPIKey("vai_sk_..."),
-)
+fmt.Printf("%s <%s> - %s\n", contact.Name, contact.Email, contact.Role)
 ```
 
-### Messages Service
+### Vision
+
+Images work the same across all vision-capable models:
 
 ```go
-// Single request/response
-resp, err := client.Messages.Create(ctx, req)
-
-// Streaming
-stream, err := client.Messages.Stream(ctx, req)
-
-// Tool loop (blocking)
-result, err := client.Messages.Run(ctx, req, vai.WithMaxToolCalls(10))
-
-// Tool loop (streaming)
-stream, err := client.Messages.RunStream(ctx, req, vai.WithMaxToolCalls(10))
-
-// Structured extraction
-var output MyStruct
-resp, err := client.Messages.Extract(ctx, req, &output)
+resp, _ := client.Messages.Create(ctx, &vai.MessageRequest{
+    Model: "gemini/gemini-2.0-flash",
+    Messages: []vai.Message{
+        {Role: "user", Content: []vai.ContentBlock{
+            vai.Text("What's in this image?"),
+            vai.ImageURL("https://example.com/photo.jpg"),
+        }},
+    },
+})
 ```
 
-### Run Options
+## Supported Providers
 
-```go
-vai.WithMaxToolCalls(n)              // Stop after n tool calls
-vai.WithMaxTurns(n)                  // Stop after n LLM turns
-vai.WithTimeout(d)                   // Timeout for entire run
-vai.WithStopWhen(fn)                 // Custom stop condition
-vai.WithToolHandler(name, fn)        // Register tool handler
-vai.WithOnToolCall(fn)               // Hook for tool execution
-vai.WithLive(cfg)                    // Enable real-time voice
-```
+| Provider | Models | Native Tools |
+|----------|--------|--------------|
+| **Anthropic** | Claude Sonnet 4, Claude Opus 4, Claude Haiku | Web search, code execution, computer use |
+| **OpenAI** | GPT-4o, GPT-4o-mini, o1 | Web search, code interpreter, file search |
+| **Google** | Gemini 2.5 Pro/Flash, Gemini 2.0 Flash | Google Search, code execution |
+| **Groq** | Llama 3.3 70B, Mixtral | — |
+| **Mistral** | Mistral Large, Codestral | — |
 
----
+## Architecture
 
-## Project Structure
+Vango AI uses a **Shared Core** design. The same Go library (`pkg/core`) powers both the SDK and the Proxy:
 
 ```
-vai/
-├── pkg/core/                  # Shared logic (providers, voice, tools)
-│   ├── providers/             # Anthropic, OpenAI, Gemini, Groq
-│   ├── voice/                 # STT/TTS pipeline
-│   └── tools/                 # Tool normalization
-├── sdk/                       # Go SDK
-│   ├── client.go
-│   ├── messages.go
-│   ├── stream.go
-│   ├── run.go
-│   ├── live.go
-│   └── tools.go
-├── cmd/vai-proxy/             # HTTP server binary
-├── docs/
-│   ├── API_SPEC.md            # Full API specification
-│   └── SDK_SPEC.md            # Full SDK specification
-└── examples/
+┌─────────────────────────────────────────────────────┐
+│                    pkg/core                         │
+│         (Translation, Voice, Tools)                 │
+└─────────────────────────────────────────────────────┘
+              │                       │
+              ▼                       ▼
+    ┌─────────────────┐     ┌─────────────────┐
+    │     Go SDK      │     │   Vango Proxy   │
+    │  (Direct Mode)  │     │  (Server Mode)  │
+    └─────────────────┘     └─────────────────┘
 ```
 
----
+**Direct Mode**: SDK imports `pkg/core` directly. Zero infrastructure, zero latency overhead.
 
-## Environment Variables
+**Proxy Mode**: SDK talks to the Vango Proxy over HTTP. Centralized keys, observability, rate limiting.
 
-| Variable | Description |
-|----------|-------------|
-| `ANTHROPIC_API_KEY` | Anthropic API key |
-| `OPENAI_API_KEY` | OpenAI API key |
-| `GOOGLE_API_KEY` | Google Gemini API key |
-| `GROQ_API_KEY` | Groq API key |
-| `DEEPGRAM_API_KEY` | Deepgram STT key |
-| `ELEVENLABS_API_KEY` | ElevenLabs TTS key |
-| `CARTESIA_API_KEY` | Cartesia TTS key |
+## Running the Proxy
 
----
+```bash
+docker run -p 8080:8080 \
+  -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
+  -e OPENAI_API_KEY=$OPENAI_API_KEY \
+  ghcr.io/vango-ai/vai-proxy
+```
 
 ## Documentation
 
-- [API Specification](docs/API_SPEC.md) - Complete API reference
-- [SDK Specification](docs/SDK_SPEC.md) - Go SDK documentation
-
----
+- [API Specification](./docs/API_SPEC.md) — Complete API reference
+- [SDK Specification](./docs/SDK_SPEC.md) — Go SDK documentation
+- [Examples](./examples/) — Working code examples
 
 ## License
 
