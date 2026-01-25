@@ -1,4 +1,4 @@
-# Vango AI
+# Vango AI (WIP, NOT LAUNCHED)
 
 **One API for every LLM. Text, tools, and voice.**
 
