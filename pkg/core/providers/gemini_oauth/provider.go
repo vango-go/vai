@@ -4,12 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/vango-go/vai/pkg/core"
 	"github.com/vango-go/vai/pkg/core/types"
 )
+
+var debugRequests = os.Getenv("DEBUG_GEMINI_OAUTH") != ""
 
 // Provider implements the Gemini OAuth provider using Cloud Code Assist.
 type Provider struct {
@@ -158,23 +162,23 @@ type geminiContent struct {
 // geminiPart represents a single part within content.
 type geminiPart struct {
 	Text             string                   `json:"text,omitempty"`
-	InlineData       *geminiBlob              `json:"inline_data,omitempty"`
-	FileData         *geminiFileData          `json:"file_data,omitempty"`
-	FunctionCall     *geminiFunctionCall      `json:"function_call,omitempty"`
-	FunctionResponse *geminiFunctionResponse  `json:"function_response,omitempty"`
-	ThoughtSignature string                   `json:"thought_signature,omitempty"`
+	InlineData       *geminiBlob              `json:"inlineData,omitempty"`
+	FileData         *geminiFileData          `json:"fileData,omitempty"`
+	FunctionCall     *geminiFunctionCall      `json:"functionCall,omitempty"`
+	FunctionResponse *geminiFunctionResponse  `json:"functionResponse,omitempty"`
+	ThoughtSignature string                   `json:"thoughtSignature,omitempty"`
 }
 
 // geminiBlob represents inline binary data.
 type geminiBlob struct {
-	MIMEType string `json:"mime_type"`
+	MIMEType string `json:"mimeType"`
 	Data     string `json:"data"`
 }
 
 // geminiFileData represents a file reference.
 type geminiFileData struct {
-	MIMEType string `json:"mime_type,omitempty"`
-	FileURI  string `json:"file_uri"`
+	MIMEType string `json:"mimeType,omitempty"`
+	FileURI  string `json:"fileUri"`
 }
 
 // geminiFunctionCall represents a function call from the model.
@@ -343,18 +347,23 @@ func (p *Provider) translateMessages(messages []types.Message) []geminiContent {
 		}
 
 		if hasToolResults {
+			// Gemini requires all function responses in a single content block
+			var parts []geminiPart
 			for _, block := range blocks {
 				if tr, ok := block.(types.ToolResultBlock); ok {
-					contents = append(contents, geminiContent{
-						Role: "function",
-						Parts: []geminiPart{{
-							FunctionResponse: &geminiFunctionResponse{
-								Name:     p.getToolNameFromID(tr.ToolUseID, messages),
-								Response: p.toolResultToMap(tr.Content),
-							},
-						}},
+					parts = append(parts, geminiPart{
+						FunctionResponse: &geminiFunctionResponse{
+							Name:     p.getToolNameFromID(tr.ToolUseID, messages),
+							Response: p.toolResultToMap(tr.Content),
+						},
 					})
 				}
+			}
+			if len(parts) > 0 {
+				contents = append(contents, geminiContent{
+					Role:  "function",
+					Parts: parts,
+				})
 			}
 			continue
 		}
@@ -601,8 +610,24 @@ func (p *Provider) parseResponse(body []byte, model string) (*types.MessageRespo
 
 	candidate := geminiResp.Candidates[0]
 
+	if debugRequests {
+		log.Printf("[GEMINI-OAUTH] Parsed %d parts", len(candidate.Content.Parts))
+		for i, part := range candidate.Content.Parts {
+			log.Printf("[GEMINI-OAUTH] Part %d: Text=%q, FunctionCall=%v, ThoughtSig=%q",
+				i, part.Text, part.FunctionCall, part.ThoughtSignature)
+		}
+	}
+
 	content := p.parseContentParts(candidate.Content.Parts)
 	stopReason := mapFinishReason(candidate.FinishReason)
+
+	// Cloud Code API returns "STOP" even for function calls, so check content
+	for _, block := range content {
+		if _, ok := block.(types.ToolUseBlock); ok {
+			stopReason = types.StopReasonToolUse
+			break
+		}
+	}
 
 	usage := types.Usage{}
 	if geminiResp.UsageMetadata != nil {

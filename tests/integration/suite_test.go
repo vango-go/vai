@@ -6,6 +6,7 @@ package integration_test
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -125,6 +126,24 @@ var providerConfigs = []providerConfig{
 		SupportsTemperature:      true,
 		NativeTools:              []string{"web_search", "browser_search"},
 		Extensions:               []string{"reasoning_effort", "include_reasoning"},
+	},
+	{
+		Name:                     "gemini-oauth",
+		Model:                    "gemini-oauth/gemini-3-pro-preview",
+		KeyName:                  "gemini-oauth",
+		RequireKey:               requireGeminiOAuthProjectID,
+		SupportsVision:           true,
+		SupportsAudioInput:       true,
+		SupportsVideoInput:       true,
+		SupportsAudioOutput:      false,
+		SupportsTools:            true,
+		SupportsToolStreaming:    true,
+		SupportsThinking:         true,
+		SupportsStructuredOutput: false, // Same as regular Gemini
+		SupportsStopSequences:    false, // Same as regular Gemini
+		SupportsTemperature:      true,
+		NativeTools:              []string{"google_search", "code_execution", "file_search", "computer_use", "image_generation"},
+		Extensions:               []string{"thinking_level", "thinking_budget", "media_resolution", "thought_signatures", "grounding_metadata"},
 	},
 }
 
@@ -309,6 +328,29 @@ func requireGeminiKey(t *testing.T) {
 func requireGroqKey(t *testing.T) {
 	if os.Getenv("GROQ_API_KEY") == "" {
 		t.Skip("GROQ_API_KEY not set")
+	}
+}
+
+func requireGeminiOAuthProjectID(t *testing.T) {
+	// Check env var first
+	if os.Getenv("GEMINI_OAUTH_PROJECT_ID") != "" {
+		return
+	}
+	// Check credentials file
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("GEMINI_OAUTH_PROJECT_ID not set and cannot find home dir")
+	}
+	credsPath := filepath.Join(home, ".config", "vango", "gemini-oauth-credentials.json")
+	data, err := os.ReadFile(credsPath)
+	if err != nil {
+		t.Skip("GEMINI_OAUTH_PROJECT_ID not set and no credentials file found")
+	}
+	var creds struct {
+		ProjectID string `json:"project_id"`
+	}
+	if err := json.Unmarshal(data, &creds); err != nil || creds.ProjectID == "" {
+		t.Skip("GEMINI_OAUTH_PROJECT_ID not set and credentials file has no project_id")
 	}
 }
 

@@ -80,7 +80,7 @@ func generatePKCE() (verifier, challenge string, err error) {
 func AuthorizeURL(state, challenge string) string {
 	u, _ := url.Parse(AuthURL)
 	q := u.Query()
-	q.Set("client_id", ClientID)
+	q.Set("client_id", GetClientID())
 	q.Set("response_type", "code")
 	q.Set("redirect_uri", RedirectURI)
 	q.Set("scope", strings.Join(Scopes, " "))
@@ -97,8 +97,8 @@ func AuthorizeURL(state, challenge string) string {
 // If projectID is empty, it will be auto-discovered using the Cloud Resource Manager API.
 func ExchangeCode(code, verifier, projectID string) (*Credentials, error) {
 	data := url.Values{}
-	data.Set("client_id", ClientID)
-	data.Set("client_secret", ClientSecret)
+	data.Set("client_id", GetClientID())
+	data.Set("client_secret", GetClientSecret())
 	data.Set("code", code)
 	data.Set("grant_type", "authorization_code")
 	data.Set("redirect_uri", RedirectURI)
@@ -186,8 +186,8 @@ func Refresh(creds *Credentials) error {
 	}
 
 	data := url.Values{}
-	data.Set("client_id", ClientID)
-	data.Set("client_secret", ClientSecret)
+	data.Set("client_id", GetClientID())
+	data.Set("client_secret", GetClientSecret())
 	data.Set("refresh_token", creds.RefreshToken)
 	data.Set("grant_type", "refresh_token")
 

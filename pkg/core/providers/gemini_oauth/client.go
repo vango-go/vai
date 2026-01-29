@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 )
 
@@ -21,6 +22,10 @@ func (p *Provider) doRequest(ctx context.Context, model string, req *geminiReque
 	wrappedBody, err := WrapRequest(body, p.projectID, model)
 	if err != nil {
 		return nil, fmt.Errorf("wrap request: %w", err)
+	}
+
+	if debugRequests {
+		log.Printf("[GEMINI-OAUTH] Request body: %s", string(wrappedBody))
 	}
 
 	// Build URL for Cloud Code Assist
@@ -57,10 +62,18 @@ func (p *Provider) doRequest(ctx context.Context, model string, req *geminiReque
 		return nil, fmt.Errorf("read response: %w", err)
 	}
 
+	if debugRequests {
+		log.Printf("[GEMINI-OAUTH] Raw response: %s", string(respBody))
+	}
+
 	// Unwrap Cloud Code response
 	unwrapped, err := UnwrapResponse(respBody)
 	if err != nil {
 		return nil, fmt.Errorf("unwrap response: %w", err)
+	}
+
+	if debugRequests {
+		log.Printf("[GEMINI-OAUTH] Unwrapped response: %s", string(unwrapped))
 	}
 
 	return unwrapped, nil

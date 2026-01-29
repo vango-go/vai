@@ -3,13 +3,24 @@
 // quota instead of API billing.
 package gemini_oauth
 
+import "os"
+
+// GetClientID returns the OAuth client ID from GEMINI_OAUTH_CLIENT_ID env var.
+func GetClientID() string {
+	return os.Getenv("GEMINI_OAUTH_CLIENT_ID")
+}
+
+// GetClientSecret returns the OAuth client secret from GEMINI_OAUTH_CLIENT_SECRET env var.
+func GetClientSecret() string {
+	return os.Getenv("GEMINI_OAUTH_CLIENT_SECRET")
+}
+
 // OAuth constants for Google Gemini CLI authentication.
-// Note: Client ID and secret should be loaded from environment variables
 const (
-	// ClientID is the OAuth client ID for Gemini CLI (loaded from GEMINI_OAUTH_CLIENT_ID env var).
+	// ClientID is deprecated, use GetClientID() instead.
 	ClientID = ""
 
-	// ClientSecret is the OAuth client secret for Gemini CLI (loaded from GEMINI_OAUTH_CLIENT_SECRET env var).
+	// ClientSecret is deprecated, use GetClientSecret() instead.
 	ClientSecret = ""
 
 	// RedirectURI is the OAuth callback URI.
